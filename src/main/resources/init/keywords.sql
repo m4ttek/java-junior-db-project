@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS keywords (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL
+);
