@@ -26,4 +26,5 @@ dependencies {
     implementation("com.h2database:h2:2.2.220")
 
     implementation("org.apache.commons:commons-csv:1.10.0")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.15.2")
 }

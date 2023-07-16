@@ -1,10 +1,18 @@
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.commons.csv.CSVFormat;
@@ -12,9 +20,16 @@ import org.apache.commons.csv.CSVRecord;
 
 public class DataLoader {
 
+    private static ObjectMapper objectMapper = new ObjectMapper();
+    static {
+        objectMapper.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES, true);
+        objectMapper.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER, true);
+    }
+
     private final Connection dbConnection;
 
     private final String[] MOVIES_HEADERS = { "genres_ids", "id", "original_language", "overview", "popularity", "release_date", "title", "vote_average", "vote_count", "genres"};
+    private final String[] KEYWORDS_HEADERS = { "lp", "id", "keywords"};
 
     public DataLoader(Connection dbConnection) {
         this.dbConnection = dbConnection;
@@ -49,5 +64,54 @@ public class DataLoader {
         } catch (IOException | SQLException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public void loadKeywordsData() {
+        try (var createTableReader = new BufferedReader(new InputStreamReader(this.getClass().getResourceAsStream("/data/keywords_dataframe.csv")));
+             var statement = dbConnection.createStatement()) {
+            CSVFormat csvFormat = CSVFormat.DEFAULT.builder()
+                    .setHeader(KEYWORDS_HEADERS)
+                    .setSkipHeaderRecord(true)
+                    .build();
+            Iterable<CSVRecord> records = csvFormat.parse(createTableReader);
+            Set<String> setForDuplicates = new HashSet<>();
+
+            Map<Integer, List<Integer>> movieToKeywordsIds = new HashMap<>();
+            Map<Integer, String> keywordsMap = new HashMap<>();
+
+            for (CSVRecord record : records) {
+                String movieId = record.get("id");
+                if (setForDuplicates.contains(record.get("id"))) {
+                    continue;
+                }
+                setForDuplicates.add(movieId);
+
+                List<Map<String, Object>> keywords = objectMapper.readValue(record.get("keywords"), List.class);
+
+                List<Integer> movieKeywordIds = new ArrayList<>();
+                for (var keywordObject: keywords) {
+                    Integer keywordId = (Integer) keywordObject.get("id");
+                    String keywordName = (String) keywordObject.get("name");
+                    keywordsMap.put(keywordId, keywordName);
+                    movieKeywordIds.add(keywordId);
+                }
+                movieToKeywordsIds.put(Integer.valueOf(movieId), movieKeywordIds);
+            }
+
+            for (var keyword: keywordsMap.entrySet()) {
+                statement.addBatch("INSERT INTO keywords VALUES ( %d, '%s' )".formatted(keyword.getKey(), keyword.getValue().replaceAll("'", "''")));
+            }
+
+            for (var movieToKeywords: movieToKeywordsIds.entrySet()) {
+                for (var keywordId: movieToKeywords.getValue()) {
+                    statement.addBatch("INSERT INTO movies_keywords VALUES ( %d, %d )".formatted(movieToKeywords.getKey(), keywordId));
+                }
+            }
+
+            statement.executeBatch();
+        } catch (IOException | SQLException e) {
+            throw new RuntimeException(e);
+        }
+
     }
 }

@@ -8,6 +8,7 @@ public class MoviesApplication {
         try (Connection connection = DriverManager.getConnection("jdbc:h2:mem:./")) {
             new DBInitializer(connection).initDB();
             new DataLoader(connection).loadMoviesData();
+            new DataLoader(connection).loadKeywordsData();
         }
     }
 }
