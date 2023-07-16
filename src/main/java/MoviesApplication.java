@@ -9,6 +9,7 @@ public class MoviesApplication {
             new DBInitializer(connection).initDB();
             new DataLoader(connection).loadMoviesData();
             new DataLoader(connection).loadKeywordsData();
+            new DataLoader(connection).loadActorsData();
         }
     }
 }

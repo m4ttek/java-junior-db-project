@@ -30,6 +30,7 @@ public class DataLoader {
 
     private final String[] MOVIES_HEADERS = { "genres_ids", "id", "original_language", "overview", "popularity", "release_date", "title", "vote_average", "vote_count", "genres"};
     private final String[] KEYWORDS_HEADERS = { "lp", "id", "keywords"};
+    private final String[] ACTORS_HEADERS = { "id", "cast"};
 
     public DataLoader(Connection dbConnection) {
         this.dbConnection = dbConnection;
@@ -105,6 +106,59 @@ public class DataLoader {
             for (var movieToKeywords: movieToKeywordsIds.entrySet()) {
                 for (var keywordId: movieToKeywords.getValue()) {
                     statement.addBatch("INSERT INTO movies_keywords VALUES ( %d, %d )".formatted(movieToKeywords.getKey(), keywordId));
+                }
+            }
+
+            statement.executeBatch();
+        } catch (IOException | SQLException e) {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    public void loadActorsData() {
+
+        try (var createTableReader = new BufferedReader(new InputStreamReader(this.getClass().getResourceAsStream("/data/cast_dataset.csv")));
+             var statement = dbConnection.createStatement()) {
+            CSVFormat csvFormat = CSVFormat.DEFAULT.builder()
+                    .setHeader(ACTORS_HEADERS)
+                    .setSkipHeaderRecord(true)
+                    .build();
+            Iterable<CSVRecord> records = csvFormat.parse(createTableReader);
+            Set<String> setForDuplicates = new HashSet<>();
+
+            Map<Integer, Map<Integer, String>> movieToActorsIdsWithCharacter = new HashMap<>();
+            Map<Integer, String> actorsMap = new HashMap<>();
+
+            for (CSVRecord record : records) {
+                String movieId = record.get("id");
+                if (setForDuplicates.contains(record.get("id"))) {
+                    continue;
+                }
+                setForDuplicates.add(movieId);
+
+                List<Map<String, Object>> actors = objectMapper.readValue(record.get("cast"), List.class);
+
+                Map<Integer, String> movieActorIdAndCharacter = new HashMap<>();
+                for (var actorObject: actors) {
+                    Integer actorId = (Integer) actorObject.get("cast_id");
+                    String actorName = (String) actorObject.get("name");
+                    String actorCharacter = (String) actorObject.get("character");
+                    actorsMap.put(actorId, actorName);
+
+                    movieActorIdAndCharacter.put(actorId, actorCharacter);
+                }
+                movieToActorsIdsWithCharacter.put(Integer.valueOf(movieId), movieActorIdAndCharacter);
+            }
+
+            actorsMap.remove(null);
+            for (var actor: actorsMap.entrySet()) {
+                statement.addBatch("INSERT INTO actors VALUES ( %d, '%s' )".formatted(actor.getKey(), actor.getValue().replaceAll("'", "''")));
+            }
+
+            for (var movieToActor: movieToActorsIdsWithCharacter.entrySet()) {
+                for (var actorIdWithCharacter: movieToActor.getValue().entrySet()) {
+                    statement.addBatch("INSERT INTO movies_actors VALUES ( %d, %d, '%s' )".formatted(movieToActor.getKey(), actorIdWithCharacter.getKey(), actorIdWithCharacter.getValue().replaceAll("'", "''")));
                 }
             }
 
